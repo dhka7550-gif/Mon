@@ -894,3 +894,273 @@ fun CustomerFormScreen(
                         remainingDebt = remaining,
                         dueDate = dueDate.ifBlank { null },
                         notes = notes,
+                        createdAt = existing?.createdAt ?: DateTimeUtils.getNowISO()
+                    )
+                    if (isEdit) {
+                        viewModel.updateCustomer(customer) { if (it) onBack() }
+                    } else {
+                        viewModel.addCustomer(customer) { if (it) onBack() }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                enabled = name.isNotBlank() && phone.isNotBlank()
+            ) {
+                Text(if (isEdit) "حفظ" else "إضافة", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InventoryScreen(viewModel: InventoryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+    val items by viewModel.items.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    var showDialog by remember { mutableStateOf(false) }
+    var editingItem by remember { mutableStateOf<InventoryItem?>(null) }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("إدارة المخزون والعهدة") }) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showDialog = true }) {
+                Icon(Icons.Default.Add, "إضافة")
+            }
+        }
+    ) { padding ->
+        if (isLoading && items.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(items, key = { it.id }) { item ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.itemName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                Text("الموقع: ${item.location}")
+                                Text("المستلم: ${item.holder}")
+                                Text("الحالة: ${item.status}")
+                            }
+                            IconButton(onClick = { editingItem = item; showDialog = true }) {
+                                Icon(Icons.Default.Edit, "تعديل")
+                            }
+                            IconButton(onClick = { viewModel.deleteItem(item.id) }) {
+                                Icon(Icons.Default.Delete, "حذف", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDialog) {
+        var itemName by remember { mutableStateOf(editingItem?.itemName ?: "") }
+        var location by remember { mutableStateOf(editingItem?.location ?: "") }
+        var holder by remember { mutableStateOf(editingItem?.holder ?: "") }
+        var status by remember { mutableStateOf(editingItem?.status ?: "available") }
+        var notes by remember { mutableStateOf(editingItem?.notes ?: "") }
+
+        AlertDialog(
+            onDismissRequest = { showDialog = false; editingItem = null },
+            title = { Text(if (editingItem == null) "إضافة عهدة جديدة" else "تعديل بيانات العهدة") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(itemName, { itemName = it }, label = { Text("اسم الأداة") })
+                    OutlinedTextField(location, { location = it }, label = { Text("الموقع") })
+                    OutlinedTextField(holder, { holder = it }, label = { Text("المستلم") })
+                    OutlinedTextField(status, { status = it }, label = { Text("الحالة") })
+                    OutlinedTextField(notes, { notes = it }, label = { Text("ملاحظات") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (editingItem == null) {
+                        viewModel.addItem(
+                            InventoryItem(itemName = itemName, location = location, holder = holder, status = status, notes = notes)
+                        ) { success -> if (success) showDialog = false }
+                    } else {
+                        viewModel.updateItem(
+                            editingItem!!.copy(itemName = itemName, location = location, holder = holder, status = status, notes = notes)
+                        ) { success -> if (success) showDialog = false }
+                    }
+                }) { Text("حفظ") }
+            },
+            dismissButton = { TextButton(onClick = { showDialog = false; editingItem = null }) { Text("إلغاء") } }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AuditLogScreen(viewModel: AuditLogViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+    val logs by viewModel.logs.collectAsState()
+
+    Scaffold(topBar = { TopAppBar(title = { Text("سجل الأحداث") }) }) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(logs, key = { it.id }) { log ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(log.action, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("المستخدم: ${log.userName}", style = MaterialTheme.typography.bodySmall)
+                            Text(DateTimeUtils.formatDateTime(log.createdAt), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    authViewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    templateViewModel: TemplateViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+) {
+    val templates by templateViewModel.templates.collectAsState()
+    var showAddTemplate by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("الإعدادات") }) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddTemplate = true }) {
+                Icon(Icons.Default.Add, "إضافة قالب")
+            }
+        }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            Button(
+                onClick = { authViewModel.logout() },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Logout, null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("تسجيل الخروج")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("قوالب الرسائل", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(templates, key = { it.id }) { template ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(template.title, fontWeight = FontWeight.Bold)
+                                Text(template.body, style = MaterialTheme.typography.bodySmall)
+                            }
+                            IconButton(onClick = { templateViewModel.deleteTemplate(template.id) }) {
+                                Icon(Icons.Default.Delete, "حذف")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddTemplate) {
+        var title by remember { mutableStateOf("") }
+        var body by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddTemplate = false },
+            title = { Text("إضافة قالب جديد") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(title, { title = it }, label = { Text("عنوان القالب") })
+                    OutlinedTextField(body, { body = it }, label = { Text("نص الرسالة") })
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    templateViewModel.addTemplate(MessageTemplate(title = title, body = body)) { success ->
+                        if (success) showAddTemplate = false
+                    }
+                }) { Text("حفظ") }
+            },
+            dismissButton = { TextButton(onClick = { showAddTemplate = false }) { Text("إلغاء") } }
+        )
+    }
+}
+
+// ============ الملاحة الرئيسية ============
+@Composable
+fun AppNavHost(navController: NavHostController) {
+    val currentUser by AuthRepository.currentUser.collectAsState()
+
+    NavHost(
+        navController = navController,
+        startDestination = if (currentUser == null) "login" else "customers"
+    ) {
+        composable("login") {
+            LoginScreen()
+            LaunchedEffect(currentUser) {
+                if (currentUser != null) {
+                    navController.navigate("customers") {
+                        popUpTo("login") { inclusive = true }
+                    }
+                }
+            }
+        }
+        composable("customers") {
+            CustomerListScreen(
+                onCustomerClick = { id -> navController.navigate("customer/$id") },
+                onAddCustomer = { navController.navigate("customer/new") }
+            )
+        }
+        composable("customer/{customerId}") { backStackEntry ->
+            val customerId = backStackEntry.arguments?.getString("customerId") ?: "new"
+            if (customerId == "new") {
+                CustomerFormScreen(customerId = null, onBack = { navController.popBackStack() })
+            } else {
+                CustomerDetailScreen(customerId = customerId, onBack = { navController.popBackStack() })
+            }
+        }
+        composable("inventory") { InventoryScreen() }
+        composable("audit") {
+            if (AuthRepository.isAdmin()) {
+                AuditLogScreen()
+            } else {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            }
+        }
+        composable("settings") { SettingsScreen() }
+    }
+}
+
+// ============ النشاط الرئيسي ============
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            val navController = rememberNavController()
+            MaterialTheme {
+                MainScaffold(navController = navController) {
+                    AppNavHost(navController = navController)
+                }
+            }
+        }
+    }
+}
